@@ -16,6 +16,7 @@ include = [
 
 [features]
 async_test = ["futures-executor"]
+default = ["async_test"]
 
 [dependencies]
 darling = "0.10.0"
@@ -28,6 +29,7 @@ futures-executor = { version = "0.3.5", optional = true } # Can't have optional 
 [dev-dependencies]
 simplelog = "0.8"
 log = "0.4"
+async-trait = "0.1"
 
 [badges]
 travis-ci = { repository = "elichai/log-derive" }

@@ -170,15 +170,19 @@ struct OutputOptions {
 struct InputOptions {
     level: Ident,
     fmt: Option<String>,
+    skip: Vec<String>,
 }
 
 impl FromMeta for InputOptions {
     fn from_list(items: &[NestedMeta]) -> darling::Result<Self> {
         let level;
         let mut fmt = None;
+        let mut skip = vec![];
         if items.is_empty() {
             return Err(Error::too_few_items(1));
         }
+
+        let usage_msg = "Attribute parameters should be := LOG LEVEL[, <fmt=\"...\"|skip(param_names_list)>[, <fmt=\"...\"|skip(param_names_list)>]]";
 
         match &items[0] {
             NestedMeta::Meta(first) => {
@@ -195,11 +199,52 @@ impl FromMeta for InputOptions {
             NestedMeta::Lit(lit) => return Err(Error::unexpected_lit_type(lit)),
         }
 
-        if items.len() > 1 {
-            fmt = String::from_nested_meta(&items[1]).ok();
+        for i in 1..items.len() {
+            let item = &items[i];
+            match item {
+                NestedMeta::Meta(meta) => {
+                    if let Meta::NameValue(name_value) = meta {
+                        if let Some(ident) = name_value.path.get_ident() {
+                            match ident.to_string().as_str() {
+                                "fmt" => fmt = String::from_nested_meta(item).ok(),
+                                _ => panic!("log-derive: unknown identifier '{}'. {}", ident, usage_msg),
+                            }
+                        }
+                    } else if let Meta::List(meta_list) = meta {
+                        if let Some(ident) = meta_list.path.get_ident() {
+                            match ident.to_string().as_str() {
+                                "skip" => {
+                                    for arg in meta_list.nested.iter() {
+                                        match arg {
+                                            NestedMeta::Meta(arg_meta) => {
+                                                if let Meta::Path(arg_path) = arg_meta {
+                                                    if let Some(arg_ident) = arg_path.get_ident() {
+                                                        skip.push(arg_ident.to_string());
+                                                    } else {
+                                                        return Err(Error::unexpected_type(&format!("log-derive: missing identifier in the `skip` list. {}", usage_msg)));
+                                                    }
+                                                } else {
+                                                    return Err(Error::unexpected_type(&format!("log-derive: unknown arg {:?} in the `skip` list. {}", arg_meta, usage_msg)));
+                                                }
+                                            }
+                                            NestedMeta::Lit(lit) => return Err(Error::unexpected_lit_type(lit)),
+                                        }
+                                    }
+                                },
+                                _ => panic!("log-derive: unknown identifier '{}'. {}", ident, usage_msg),
+                            }
+                        }
+                    } else {
+                        panic!("log-derive: unknown item #{}: {:?}. {}", i, item, usage_msg);
+                    }
+                }
+                NestedMeta::Lit(lit) => return Err(Error::unexpected_lit_type(lit)),
+            }
         }
 
-        Ok(InputOptions { level, fmt })
+        // panic!("ITEMS are: {:#?}", items);
+
+        Ok(InputOptions { level, fmt, skip })
     }
 }
 
@@ -456,17 +501,25 @@ fn log_fn_inputs(func: &ItemFn, attr: InputOptions) -> syn::Result<Stmt> {
         })
         .collect();
 
-    let items: Punctuated<_, token::Comma> = inputs.iter().cloned().collect();
+    let InputOptions { skip, fmt, .. } = attr;
+
+    let items: Punctuated<_, token::Comma> = inputs.iter().cloned()
+        .filter(|ident| !skip.contains(&ident.to_string()))
+        .collect();
 
     let level = get_logger_token(&attr.level);
-    let fmt = attr.fmt.unwrap_or_else(|| {
+    let fmt = fmt.unwrap_or_else(|| {
         let mut fmt = String::with_capacity(inputs.len() * 9);
         fmt.push_str(&fn_name);
         fmt.push('(');
 
         for input in inputs {
             fmt.push_str(&input.to_string());
-            fmt.push_str(": {:?},");
+            if skip.contains(&input.to_string()) {
+                fmt.push_str(": <skipped>,");
+            } else {
+                fmt.push_str(": {:?},");
+            }
         }
         fmt.pop(); // Remove the extra comma.
         fmt.push(')');
