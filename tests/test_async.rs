@@ -16,11 +16,12 @@ async fn async_function(ok: bool) -> Result<&'static str, &'static str> {
     }
 }
 
-// #[async_trait]
+#[async_trait]
 trait MyAsync {
     async fn async_trait_function(&self, ok: bool) -> Result<&'static str, &'static str> ;
 }
 struct MyStruct;
+#[async_trait]
 impl MyAsync for MyStruct {
     #[logfn_inputs(INFO, skip(self))]
     //#[logfn(INFO)]
@@ -70,9 +71,9 @@ fn async_trait_works() {
 
     futures_executor::block_on(async {
         assert_eq!(instance.async_trait_function(true).await, Ok("async Ok"));
-        THREAD_LOGGER.assert_last_log("async_trait_function(self: <skipped>,ok: true)", Level::Info, 25);
+        THREAD_LOGGER.assert_last_log("async_trait_function(self: <skipped>,ok: true)", Level::Info, 26);
         assert_eq!(instance.async_trait_function(false).await, Err("async Err"));
-        THREAD_LOGGER.assert_last_log("async_trait_function(self: <skipped>,ok: false)", Level::Info, 25);
+        THREAD_LOGGER.assert_last_log("async_trait_function(self: <skipped>,ok: false)", Level::Info, 26);
         assert!(THREAD_LOGGER.is_empty())
     })
 }
